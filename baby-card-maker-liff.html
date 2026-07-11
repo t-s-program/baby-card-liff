@@ -342,7 +342,7 @@
   <!-- ============ FORM PANEL ============ -->
   <div class="panel">
     <h1>赤ちゃん紹介カード メーカー</h1>
-    <p class="lead">出産報告はがき(横向き・148×100mm)を作成できます。項目を入力すると右のプレビューがリアルタイムで更新されます。</p>
+    <p class="lead">赤ちゃん紹介カードを作成できます。項目を入力するとプレビューが更新されます。</p>
 
     <div class="field">
       <label for="lastName">赤ちゃんの姓(必須)</label>
@@ -386,7 +386,7 @@
     </div>
 
     <div class="field">
-      <label for="photoInput">赤ちゃんの写真(任意)</label>
+      <label for="photoInput">赤ちゃんの写真(必須)</label>
       <input type="file" id="photoInput" accept="image/*">
     </div>
 
@@ -404,22 +404,11 @@
     <label style="display:block; font-size:12px; font-weight:700; color:var(--muted); margin-bottom:10px;">デザインを選ぶ</label>
     <div class="tmpl-grid" id="templateGrid"></div>
 
-    <div class="field">
-      <label for="emailTo">メール送信先(任意)</label>
-      <input type="email" id="emailTo" placeholder="example@mail.com" value="harika.kitami@aa.wakwak.com">
-    </div>
-
-    <div class="field">
-      <label for="lineToNote">LINE送信先ID(任意)</label>
-      <input type="text" id="lineToNote" placeholder="例: @xky4977q" value="@xky4977q">
-      <p class="note" style="margin-top:4px;">「@」で始まるLINE公式アカウント/IDを入力すると、送信ボタンでそのアカウントのトーク画面が開きます。画像はその画面で添付して送ってください(LINEの仕様上、画像添付まで自動では行えません)。</p>
-    </div>
+    <input type="hidden" id="lineToNote" value="@xky4977q">
 
     <div class="actions">
-      <button class="btn btn-primary" id="downloadBtn">メールで送る</button>
       <button class="btn btn-line" id="shareBtn">LINEで送る</button>
-      <p class="note" id="liffDebug" style="background:#FFF3CD; padding:8px; border-radius:6px; white-space:pre-wrap; word-break:break-all;">診断情報を準備中…</p>
-      <p class="note">「メールで送る」はスマホの共有メニューで「メール」を選ぶと画像添付済みのメール作成画面が開きます(対応していない端末では画像の保存画面とメールアプリを開きます)。「LINEで送る」はLINE送信先IDのトーク画面を開きつつ、画像も共有メニューまたは保存画面から用意します。</p>
+      <p class="note">LINEアプリ内(公式アカウントとのトーク画面)から開いた場合は、ボタン一つで画像添付済みのままトークに送信されます。通常のブラウザで開いた場合は、共有メニューまたは保存画面から画像を用意します。</p>
     </div>
   </div>
 
@@ -518,24 +507,6 @@ const UPLOAD_ENDPOINT = 'https://baby-card-liff-server.onrender.com/upload';
 
 let liffReady = false;
 
-function updateLiffDebug(extra){
-  const el = document.getElementById('liffDebug');
-  if(!el) return;
-  const lines = [
-    `SDK読み込み: ${typeof liff !== 'undefined' ? 'OK' : 'NG(未読み込み)'}`,
-    `liffReady: ${liffReady}`,
-  ];
-  if(typeof liff !== 'undefined' && liffReady){
-    lines.push(`isInClient: ${liff.isInClient()}`);
-    try{
-      const ctx = liff.getContext ? liff.getContext() : null;
-      lines.push(`画面タイプ(type): ${ctx ? ctx.type : '取得不可'}`);
-    } catch(e){ lines.push(`getContextエラー: ${e.message}`); }
-  }
-  if(extra) lines.push(extra);
-  el.textContent = lines.join('\n');
-}
-
 if (typeof liff !== 'undefined' && LIFF_ID && LIFF_ID !== 'YOUR_LIFF_ID') {
   liff.init({ liffId: LIFF_ID })
     .then(()=>{
@@ -545,17 +516,11 @@ if (typeof liff !== 'undefined' && LIFF_ID && LIFF_ID !== 'YOUR_LIFF_ID') {
       if(liff.isInClient()){
         const shareBtn = document.getElementById('shareBtn');
         if(shareBtn) shareBtn.textContent = 'LINEに送信する';
-        const lineField = document.getElementById('lineToNote');
-        if(lineField && lineField.closest('.field')) lineField.closest('.field').style.display = 'none';
       }
-      updateLiffDebug();
     })
     .catch((err)=>{
       console.warn('LIFF init failed:', err);
-      updateLiffDebug(`init失敗: ${err && err.message ? err.message : err}`);
     });
-} else {
-  updateLiffDebug('LIFF_IDが未設定、またはSDK未読み込みのためスキップ');
 }
 
 async function uploadImageAndGetUrl(dataUrl){
@@ -788,6 +753,38 @@ async function renderCanvas(){
   return await html2canvas(node, {scale:3, backgroundColor:null, useCORS:true, logging:false});
 }
 
+// Stamps a "サンプル" watermark directly onto a rendered canvas. Used for any
+// copy that a customer could keep for themselves (saved, shared, etc.) so
+// that only the copy sent directly to the official LINE account is treated
+// as the final, usable version.
+function stampWatermark(canvas){
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.save();
+  ctx.fillStyle = 'rgba(58,52,46,0.28)';
+  ctx.font = `${Math.round(h * 0.07)}px "Zen Maru Gothic","Noto Sans JP",sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const text = 'サンプル';
+  const stepX = w * 0.34, stepY = h * 0.28;
+  for(let y = -h * 0.3; y <= h * 1.3; y += stepY){
+    for(let x = -w * 0.3; x <= w * 1.3; x += stepX){
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(-25 * Math.PI / 180);
+      ctx.fillText(text, 0, 0);
+      ctx.restore();
+    }
+  }
+  ctx.restore();
+  return canvas;
+}
+
+async function renderWatermarkedCanvas(){
+  const canvas = await renderCanvas();
+  return stampWatermark(canvas);
+}
+
 function openSaveModal(dataUrl){
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;gap:16px;';
@@ -803,39 +800,14 @@ function openSaveModal(dataUrl){
   overlay.querySelector('#closeModal').addEventListener('click', ()=> overlay.remove());
 }
 
-document.getElementById('downloadBtn').addEventListener('click', async (e)=>{
-  const btn = e.currentTarget;
-  btn.disabled = true; const orig = btn.textContent; btn.textContent = '準備中…';
-  try{
-    const canvas = await renderCanvas();
-    const dataUrl = canvas.toDataURL('image/png');
-    const emailTo = document.getElementById('emailTo').value.trim();
-    let shared = false;
-    if(navigator.share){
-      try{
-        const blob = await (await fetch(dataUrl)).blob();
-        const file = new File([blob], 'baby-card.png', {type:'image/png'});
-        if(navigator.canShare && navigator.canShare({files:[file]})){
-          await navigator.share({files:[file], title:'赤ちゃん紹介カード'});
-          shared = true;
-        }
-      } catch(err){ /* user cancelled, or share unsupported here - fall through */ }
-    }
-    if(!shared){
-      openSaveModal(dataUrl);
-      const subject = encodeURIComponent('赤ちゃん紹介カード');
-      const body = encodeURIComponent('赤ちゃん紹介カードをお送りします。保存した画像を添付してください。');
-      const mailUrl = `mailto:${encodeURIComponent(emailTo)}?subject=${subject}&body=${body}`;
-      setTimeout(()=>{ window.location.href = mailUrl; }, 400);
-    }
-  } catch(err){
-    alert('画像の作成に失敗しました。お手数ですが再度お試しください。\n(' + (err && err.message ? err.message : err) + ')');
-  } finally { btn.disabled = false; btn.textContent = orig; }
-});
 
 document.getElementById('shareBtn').addEventListener('click', async (e)=>{
   const btn = e.currentTarget;
-  updateLiffDebug('ボタンクリックを検知しました');
+
+  if(!photoDataUrl){
+    alert('赤ちゃんの写真をアップロードしてください。');
+    return;
+  }
 
   // Path A: running inside the LINE app via LIFF, with permission to send
   // messages back into this chat. This attaches the image automatically.
@@ -856,7 +828,6 @@ document.getElementById('shareBtn').addEventListener('click', async (e)=>{
       if(code === 403){
         hint = '\n\n(考えられる原因: ・LIFFのScopeに chat_message.write が設定されていない ・「Keepメモ」から開いている ・グループ/複数人トークから開いている、など。1対1のトーク画面から開き直してみてください。)';
       }
-      updateLiffDebug(`送信エラー: code=${code} message=${err && err.message ? err.message : err}`);
       alert('LINEへの送信に失敗しました。お手数ですが再度お試しください。\n(' + (err && err.message ? err.message : err) + ')' + hint);
     } finally { btn.disabled = false; btn.textContent = orig; }
     return;
@@ -872,7 +843,7 @@ document.getElementById('shareBtn').addEventListener('click', async (e)=>{
   }
   btn.disabled = true; const orig = btn.textContent; btn.textContent = '準備中…';
   try{
-    const canvas = await renderCanvas();
+    const canvas = await renderWatermarkedCanvas();
     const dataUrl = canvas.toDataURL('image/png');
     let shared = false;
     if(navigator.share){
