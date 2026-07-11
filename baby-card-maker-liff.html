@@ -418,6 +418,7 @@
     <div class="actions">
       <button class="btn btn-primary" id="downloadBtn">メールで送る</button>
       <button class="btn btn-line" id="shareBtn">LINEで送る</button>
+      <p class="note" id="liffDebug" style="background:#FFF3CD; padding:8px; border-radius:6px; white-space:pre-wrap; word-break:break-all;">診断情報を準備中…</p>
       <p class="note">「メールで送る」はスマホの共有メニューで「メール」を選ぶと画像添付済みのメール作成画面が開きます(対応していない端末では画像の保存画面とメールアプリを開きます)。「LINEで送る」はLINE送信先IDのトーク画面を開きつつ、画像も共有メニューまたは保存画面から用意します。</p>
     </div>
   </div>
@@ -516,6 +517,23 @@ const LIFF_ID = '2010668223-P1vBkxx8';
 const UPLOAD_ENDPOINT = 'https://baby-card-liff-server.onrender.com/upload';
 
 let liffReady = false;
+
+function updateLiffDebug(extra){
+  const el = document.getElementById('liffDebug');
+  if(!el) return;
+  const lines = [
+    `SDK読み込み: ${typeof liff !== 'undefined' ? 'OK' : 'NG(未読み込み)'}`,
+    `liffReady: ${liffReady}`,
+  ];
+  if(typeof liff !== 'undefined' && liffReady){
+    lines.push(`isInClient: ${liff.isInClient()}`);
+    try{ lines.push(`sendMessages利用可: ${liff.isApiAvailable('sendMessages')}`); }
+    catch(e){ lines.push(`sendMessages確認エラー: ${e.message}`); }
+  }
+  if(extra) lines.push(extra);
+  el.textContent = lines.join('\n');
+}
+
 if (typeof liff !== 'undefined' && LIFF_ID && LIFF_ID !== 'YOUR_LIFF_ID') {
   liff.init({ liffId: LIFF_ID })
     .then(()=>{
@@ -528,8 +546,14 @@ if (typeof liff !== 'undefined' && LIFF_ID && LIFF_ID !== 'YOUR_LIFF_ID') {
         const lineField = document.getElementById('lineToNote');
         if(lineField && lineField.closest('.field')) lineField.closest('.field').style.display = 'none';
       }
+      updateLiffDebug();
     })
-    .catch((err)=>{ console.warn('LIFF init failed:', err); });
+    .catch((err)=>{
+      console.warn('LIFF init failed:', err);
+      updateLiffDebug(`init失敗: ${err && err.message ? err.message : err}`);
+    });
+} else {
+  updateLiffDebug('LIFF_IDが未設定、またはSDK未読み込みのためスキップ');
 }
 
 async function uploadImageAndGetUrl(dataUrl){
@@ -809,10 +833,11 @@ document.getElementById('downloadBtn').addEventListener('click', async (e)=>{
 
 document.getElementById('shareBtn').addEventListener('click', async (e)=>{
   const btn = e.currentTarget;
+  updateLiffDebug('ボタンクリックを検知しました');
 
   // Path A: running inside the LINE app via LIFF, with permission to send
   // messages back into this chat. This attaches the image automatically.
-  if(liffReady && liff.isInClient() && liff.isApiAvailable('sendMessages')){
+  if(liffReady && typeof liff !== 'undefined' && liff.isInClient() && liff.isApiAvailable('sendMessages')){
     btn.disabled = true; const orig = btn.textContent; btn.textContent = '送信中…';
     try{
       const canvas = await renderCanvas();
@@ -824,6 +849,7 @@ document.getElementById('shareBtn').addEventListener('click', async (e)=>{
       alert('LINEに送信しました。');
       liff.closeWindow();
     } catch(err){
+      updateLiffDebug(`送信エラー: ${err && err.message ? err.message : err}`);
       alert('LINEへの送信に失敗しました。お手数ですが再度お試しください。\n(' + (err && err.message ? err.message : err) + ')');
     } finally { btn.disabled = false; btn.textContent = orig; }
     return;
@@ -834,7 +860,8 @@ document.getElementById('shareBtn').addEventListener('click', async (e)=>{
   // Open the LINE destination immediately, inside the click gesture,
   // so mobile browsers/popup blockers don't block it.
   if(lineTo.startsWith('@')){
-    window.open(`https://line.me/R/ti/p/${encodeURIComponent(lineTo)}`, '_blank');
+    try{ window.open(`https://line.me/R/ti/p/${encodeURIComponent(lineTo)}`, '_blank'); }
+    catch(err){ /* popup blocked or unsupported - not fatal, continue */ }
   }
   btn.disabled = true; const orig = btn.textContent; btn.textContent = '準備中…';
   try{
