@@ -527,8 +527,10 @@ function updateLiffDebug(extra){
   ];
   if(typeof liff !== 'undefined' && liffReady){
     lines.push(`isInClient: ${liff.isInClient()}`);
-    try{ lines.push(`sendMessages利用可: ${liff.isApiAvailable('sendMessages')}`); }
-    catch(e){ lines.push(`sendMessages確認エラー: ${e.message}`); }
+    try{
+      const ctx = liff.getContext ? liff.getContext() : null;
+      lines.push(`画面タイプ(type): ${ctx ? ctx.type : '取得不可'}`);
+    } catch(e){ lines.push(`getContextエラー: ${e.message}`); }
   }
   if(extra) lines.push(extra);
   el.textContent = lines.join('\n');
@@ -540,7 +542,7 @@ if (typeof liff !== 'undefined' && LIFF_ID && LIFF_ID !== 'YOUR_LIFF_ID') {
       liffReady = true;
       // Inside LINE, with permission to send messages: simplify the UI,
       // since the destination is implicitly "this chat".
-      if(liff.isInClient() && liff.isApiAvailable('sendMessages')){
+      if(liff.isInClient()){
         const shareBtn = document.getElementById('shareBtn');
         if(shareBtn) shareBtn.textContent = 'LINEに送信する';
         const lineField = document.getElementById('lineToNote');
@@ -837,7 +839,7 @@ document.getElementById('shareBtn').addEventListener('click', async (e)=>{
 
   // Path A: running inside the LINE app via LIFF, with permission to send
   // messages back into this chat. This attaches the image automatically.
-  if(liffReady && typeof liff !== 'undefined' && liff.isInClient() && liff.isApiAvailable('sendMessages')){
+  if(liffReady && typeof liff !== 'undefined' && liff.isInClient()){
     btn.disabled = true; const orig = btn.textContent; btn.textContent = '送信中…';
     try{
       const canvas = await renderCanvas();
@@ -849,8 +851,13 @@ document.getElementById('shareBtn').addEventListener('click', async (e)=>{
       alert('LINEに送信しました。');
       liff.closeWindow();
     } catch(err){
-      updateLiffDebug(`送信エラー: ${err && err.message ? err.message : err}`);
-      alert('LINEへの送信に失敗しました。お手数ですが再度お試しください。\n(' + (err && err.message ? err.message : err) + ')');
+      const code = err && err.code;
+      let hint = '';
+      if(code === 403){
+        hint = '\n\n(考えられる原因: ・LIFFのScopeに chat_message.write が設定されていない ・「Keepメモ」から開いている ・グループ/複数人トークから開いている、など。1対1のトーク画面から開き直してみてください。)';
+      }
+      updateLiffDebug(`送信エラー: code=${code} message=${err && err.message ? err.message : err}`);
+      alert('LINEへの送信に失敗しました。お手数ですが再度お試しください。\n(' + (err && err.message ? err.message : err) + ')' + hint);
     } finally { btn.disabled = false; btn.textContent = orig; }
     return;
   }
